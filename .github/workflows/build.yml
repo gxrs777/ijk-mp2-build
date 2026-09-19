@@ -55,15 +55,24 @@ jobs:
           cd ../../android
           ./compile-ijk.sh arm64
           ./compile-ijk.sh armv7a
+          
+          echo "=== 查找所有 .so ==="
+          find "$HOME/ijkplayer-android" -name '*.so' -path '*libs*' | head -50
+          echo "=== 标准路径检查 ==="
+          ls -l "$HOME/ijkplayer-android/android/ijkplayer/ijkplayer-arm64/src/main/libs/arm64-v8a/" || echo "arm64目录不存在"
+          ls -l "$HOME/ijkplayer-android/android/ijkplayer/ijkplayer-armv7a/src/main/libs/armeabi-v7a/" || echo "armv7a目录不存在"
+          
+          # 不管标准路径是否命中，用 find 把 so 复制到 output
           mkdir -p "$HOME/output/arm64-v8a" "$HOME/output/armeabi-v7a"
-          cp ijkplayer/ijkplayer-arm64/src/main/libs/arm64-v8a/*.so "$HOME/output/arm64-v8a/"
-          cp ijkplayer/ijkplayer-armv7a/src/main/libs/armeabi-v7a/*.so "$HOME/output/armeabi-v7a/"
+          find "$HOME/ijkplayer-android/android/ijkplayer" -path '*arm64*/src/main/libs/*' -name '*.so' -exec cp {} "$HOME/output/arm64-v8a/" \; || true
+          find "$HOME/ijkplayer-android/android/ijkplayer" -path '*armv7a*/src/main/libs/*' -name '*.so' -exec cp {} "$HOME/output/armeabi-v7a/" \; || true
+          echo "=== output 最终内容 ==="
+          ls -R "$HOME/output"
           echo "BUILD_DONE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ijk-so
-          path: |
-            $HOME/output/arm64-v8a
-            $HOME/output/armeabi-v7a
+          path: "$HOME/output/"
+          if-no-files-found: error
