@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       ANDROID_NDK: /home/runner/android-ndk-r14b
@@ -22,7 +22,7 @@ jobs:
         run: |
           set -e
           sudo apt update
-          sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3
+          sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3 python2 || true
           export PATH="$PATH:$ANDROID_NDK"
           cd "$HOME"
           if [ ! -d "$ANDROID_NDK" ]; then
@@ -50,14 +50,20 @@ jobs:
           cd ../android/contrib
           ./compile-ffmpeg.sh clean
           ./compile-ffmpeg.sh arm64
+          ./compile-ffmpeg.sh armv7a
           cd ../../android
           ./compile-ijk.sh arm64
-          mkdir -p "$HOME/output/arm64-v8a"
+          ./compile-ijk.sh armv7a
+          mkdir -p "$HOME/output/arm64-v8a" "$HOME/output/armeabi-v7a"
           cp ijkplayer/ijkplayer-arm64/src/main/libs/arm64-v8a/*.so "$HOME/output/arm64-v8a/"
+          cp ijkplayer/ijkplayer-armv7a/src/main/libs/armeabi-v7a/*.so "$HOME/output/armeabi-v7a/"
           echo "BUILD_DONE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ijk-so-arm64
-          path: $HOME/output/arm64-v8a
+          name: ijk-so
+          path: |
+            $HOME/output/arm64-v8a
+            $HOME/output/armeabi-v7a
+
