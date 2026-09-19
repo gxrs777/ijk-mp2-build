@@ -64,28 +64,27 @@ jobs:
           ./compile-ijk.sh armv7a
           echo "BUILD_OK"
 
-      - name: Collect artifacts
+            - name: Collect artifacts
         if: always()
         run: |
           mkdir -p /home/runner/output/arm64-v8a /home/runner/output/armeabi-v7a
           echo "=== find all .so ==="
           find "$HOME/ijkplayer-android" -name '*.so' -print || true
           echo "=== copy .so ==="
-          find "$HOME/ijkplayer-android" -name '*.so' 2>/dev/null | while read f; do
+          # 只复制 ijkplayer 相关的核心 so 文件，避免误复制 Python 等环境依赖
+          find "$HOME/ijkplayer-android" -name 'libijk*.so' 2>/dev/null | while read f; do
             case "$f" in
               *arm64-v8a*) cp "$f" /home/runner/output/arm64-v8a/ ;;
-              *armeabi-v7a*|*armv7a*) cp "$f" /home/runner/output/armeabi-v7a/ ;;
-              *) echo "UNKNOWN_PATH: $f" ;;
+              *armeabi-v7a*) cp "$f" /home/runner/output/armeabi-v7a/ ;;
             esac
           done
           echo "=== output contents ==="
           ls -R /home/runner/output || true
           cat > /home/runner/output/diagnostic.txt << EOF
           Build step result: ${{ steps.build.outcome }}
-          If you see this file, no .so was found or copied.
-          Please send the contents of this artifact back for debugging.
           EOF
           echo "COLLECT_DONE"
+
 
       - name: Upload artifact
         if: always()
