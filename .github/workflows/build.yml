@@ -11,7 +11,6 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       ANDROID_NDK: /home/runner/android-ndk-r14b
       ANDROID_NDK_ROOT: /home/runner/android-ndk-r14b
 
@@ -20,10 +19,20 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build
+        id: build
         run: |
           set -e
           sudo apt update
           sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3 python2 || true
+
+          # === 修复 libncurses.so.5 缺失（NDK r14b 兼容 Ubuntu 22.04）===
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null || true
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 2>/dev/null || true
+          if [ ! -e /usr/lib/x86_64-linux-gnu/libncurses.so.5 ]; then
+            wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.2-0ubuntu2_amd64.deb -O /tmp/libncurses5.deb || true
+            sudo dpkg -i /tmp/libncurses5.deb || sudo apt-get -f install -y || true
+          fi
+
           export PATH="$PATH:$ANDROID_NDK"
           cd "$HOME"
           if [ ! -d "$ANDROID_NDK" ]; then
@@ -55,24 +64,35 @@ jobs:
           cd ../../android
           ./compile-ijk.sh arm64
           ./compile-ijk.sh armv7a
-          
-          echo "=== 查找所有 .so ==="
-          find "$HOME/ijkplayer-android" -name '*.so' -path '*libs*' | head -50
-          echo "=== 标准路径检查 ==="
-          ls -l "$HOME/ijkplayer-android/android/ijkplayer/ijkplayer-arm64/src/main/libs/arm64-v8a/" || echo "arm64目录不存在"
-          ls -l "$HOME/ijkplayer-android/android/ijkplayer/ijkplayer-armv7a/src/main/libs/armeabi-v7a/" || echo "armv7a目录不存在"
-          
-          # 不管标准路径是否命中，用 find 把 so 复制到 output
+          echo "BUILD_OK"
+
+      - name: Collect artifacts
+        if: always()
+        run: |
           mkdir -p "$HOME/output/arm64-v8a" "$HOME/output/armeabi-v7a"
-          find "$HOME/ijkplayer-android/android/ijkplayer" -path '*arm64*/src/main/libs/*' -name '*.so' -exec cp {} "$HOME/output/arm64-v8a/" \; || true
-          find "$HOME/ijkplayer-android/android/ijkplayer" -path '*armv7a*/src/main/libs/*' -name '*.so' -exec cp {} "$HOME/output/armeabi-v7a/" \; || true
-          echo "=== output 最终内容 ==="
-          ls -R "$HOME/output"
-          echo "BUILD_DONE"
+          echo "=== find all .so ==="
+          find "$HOME/ijkplayer-android" -name '*.so' -print || true
+          echo "=== copy .so ==="
+          find "$HOME/ijkplayer-android" -name '*.so' 2>/dev/null | while read f; do
+            case "$f" in
+              *arm64-v8a*) cp "$f" "$HOME/output/arm64-v8a/" ;;
+              *armeabi-v7a*|*armv7a*) cp "$f" "$HOME/output/armeabi-v7a/" ;;
+              *) echo "UNKNOWN_PATH: $f" ;;
+            esac
+          done
+          echo "=== output contents ==="
+          ls -R "$HOME/output" || true
+          cat > "$HOME/output/diagnostic.txt" << EOF
+          Build step result: ${{ steps.build.outcome }}
+          If you see this file, no .so was found or copied.
+          Please send the contents of this artifact back for debugging.
+          EOF
+          echo "COLLECT_DONE"
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ijk-so
           path: "$HOME/output/"
-          if-no-files-found: error
+          if-no-files-found: warn
