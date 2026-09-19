@@ -25,13 +25,13 @@ jobs:
           sudo apt update
           sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3 python2 || true
 
-          # === 修复 libncurses.so.5 缺失（NDK r14b 兼容 Ubuntu 22.04）===
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null || true
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 2>/dev/null || true
-          if [ ! -e /usr/lib/x86_64-linux-gnu/libncurses.so.5 ]; then
-            wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.2-0ubuntu2_amd64.deb -O /tmp/libncurses5.deb || true
-            sudo dpkg -i /tmp/libncurses5.deb || sudo apt-get -f install -y || true
-          fi
+          # === 修复 libncurses.so.5 缺失（NDK r14b 兼容）===
+          sudo apt-get install -y libncurses6 libtinfo6 || true
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/libncurses.so.5
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/libtinfo.so.5
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5
+          ldconfig
 
           export PATH="$PATH:$ANDROID_NDK"
           cd "$HOME"
@@ -69,20 +69,20 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          mkdir -p "$HOME/output/arm64-v8a" "$HOME/output/armeabi-v7a"
+          mkdir -p /home/runner/output/arm64-v8a /home/runner/output/armeabi-v7a
           echo "=== find all .so ==="
           find "$HOME/ijkplayer-android" -name '*.so' -print || true
           echo "=== copy .so ==="
           find "$HOME/ijkplayer-android" -name '*.so' 2>/dev/null | while read f; do
             case "$f" in
-              *arm64-v8a*) cp "$f" "$HOME/output/arm64-v8a/" ;;
-              *armeabi-v7a*|*armv7a*) cp "$f" "$HOME/output/armeabi-v7a/" ;;
+              *arm64-v8a*) cp "$f" /home/runner/output/arm64-v8a/ ;;
+              *armeabi-v7a*|*armv7a*) cp "$f" /home/runner/output/armeabi-v7a/ ;;
               *) echo "UNKNOWN_PATH: $f" ;;
             esac
           done
           echo "=== output contents ==="
-          ls -R "$HOME/output" || true
-          cat > "$HOME/output/diagnostic.txt" << EOF
+          ls -R /home/runner/output || true
+          cat > /home/runner/output/diagnostic.txt << EOF
           Build step result: ${{ steps.build.outcome }}
           If you see this file, no .so was found or copied.
           Please send the contents of this artifact back for debugging.
@@ -94,5 +94,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ijk-so
-          path: "$HOME/output/"
+          path: /home/runner/output/
           if-no-files-found: warn
