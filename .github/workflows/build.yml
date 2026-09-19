@@ -13,6 +13,7 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       ANDROID_NDK: /home/runner/android-ndk-r14b
+      ANDROID_NDK_ROOT: /home/runner/android-ndk-r14b
 
     steps:
       - name: Checkout
@@ -66,4 +67,3 @@ jobs:
           path: |
             $HOME/output/arm64-v8a
             $HOME/output/armeabi-v7a
-
