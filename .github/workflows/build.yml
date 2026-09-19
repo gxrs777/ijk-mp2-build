@@ -25,13 +25,11 @@ jobs:
           sudo apt update
           sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3 python2 || true
 
-          # === 修复 libncurses.so.5 缺失（NDK r14b 兼容）===
-          sudo apt-get install -y libncurses6 libtinfo6 || true
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/libncurses.so.5
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/libtinfo.so.5
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5
-          ldconfig
+          # === 修复 libncurses.so.5：用用户目录软链，不碰系统 ==-
+          mkdir -p "$HOME/ndk-compat"
+          ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 "$HOME/ndk-compat/libtinfo.so.5"
+          ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 "$HOME/ndk-compat/libncurses.so.5"
+          export LD_LIBRARY_PATH="$HOME/ndk-compat:$LD_LIBRARY_PATH"
 
           export PATH="$PATH:$ANDROID_NDK"
           cd "$HOME"
@@ -96,3 +94,4 @@ jobs:
           name: ijk-so
           path: /home/runner/output/
           if-no-files-found: warn
+
