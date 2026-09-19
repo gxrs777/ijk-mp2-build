@@ -1,0 +1,109 @@
+name: Build ijk MP2 16K
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      ANDROID_NDK: /home/runner/android-ndk-r27c
+      ANDROID_NDK_ROOT: /home/runner/android-ndk-r27c
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        id: build
+        run: |
+          set -e
+          sudo apt update
+          sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3 python-is-python3 || true
+
+          # ncurses 兼容（r27 用 llvm/clang，基本不依赖老 libncurses5；保留软链兜底）
+          mkdir -p "$HOME/ndk-compat"
+          ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 "$HOME/ndk-compat/libtinfo.so.5" 2>/dev/null || true
+          ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 "$HOME/ndk-compat/libncurses.so.5" 2>/dev/null || true
+          export LD_LIBRARY_PATH="$HOME/ndk-compat:$LD_LIBRARY_PATH"
+          export PATH="$PATH:$ANDROID_NDK"
+
+          cd "$HOME"
+          if [ ! -d "$ANDROID_NDK" ]; then
+            curl -L --retry 5 -o ndk-r27c.zip https://dl.google.com/android/repository/android-ndk-r27c-linux-x86_64.zip
+            unzip -q ndk-r27c.zip
+            mv android-ndk-r27c "$ANDROID_NDK"
+          fi
+
+          rm -rf ijkplayer-android
+          git clone https://github.com/bilibili/ijkplayer ijkplayer-android
+          cd ijkplayer-android
+          # master 最新；若要点版本再改，例如 git checkout -B build k0.8.8 不推荐（16K 老工具链坑多）
+          git checkout -B build origin/master
+          ./init-android.sh
+
+          cd config
+          rm -f module.sh
+          ln -s module-lite.sh module.sh
+          cat >> module-lite.sh << 'EOF'
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-decoder=mp2,mp2float"
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-decoder=mp3,mp3float"
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-decoder=aac,aac_latm"
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-decoder=ac3,eac3"
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-parser=mpegaudio,aac,ac3"
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-demuxer=mpegts"
+          export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-protocol=http,tcp,udp,rtp,hls"
+          EOF
+          sed -i 's/--enable-small//g' module-lite.sh
+
+          # 16K：arm64 注入链接参数；armv7a 不注入（16K 仅 arm64 必需）
+          # 优先用 ijk 的 FF_EXTRA_LDFLAGS，若 compile-ffmpeg 不读再 sed extra-ldflags
+          export FF_EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+          cd ../android/contrib
+          ./compile-ffmpeg.sh clean
+          ./compile-ffmpeg.sh arm64
+          ./compile-ffmpeg.sh armv7a
+
+          cd ../../android
+          # ijk 本体也按架构加 16K（arm64）
+          env FF_EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384" ./compile-ijk.sh arm64
+          ./compile-ijk.sh armv7a
+          echo "BUILD_OK"
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p /home/runner/output/arm64-v8a /home/runner/output/armeabi-v7a
+          echo "=== find libijk .so ==="
+          find "$HOME/ijkplayer-android" -name 'libijk*.so' -print || true
+          find "$HOME/ijkplayer-android" -name 'libijk*.so' 2>/dev/null | while read f; do
+            case "$f" in
+              *arm64-v8a*) cp "$f" /home/runner/output/arm64-v8a/ ;;
+              *armeabi-v7a*) cp "$f" /home/runner/output/armeabi-v7a/ ;;
+              *) echo "UNKNOWN_PATH: $f" ;;
+            esac
+          done
+          echo "=== 16K align check (arm64) ==="
+          NDK="$ANDROID_NDK"
+          for s in /home/runner/output/arm64-v8a/*.so; do
+            echo "--- $s ---"
+            "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -l "$s" 2>/dev/null | grep -i LOAD | head -5 || true
+          done
+          echo "=== output contents ==="
+          ls -R /home/runner/output || true
+          cat > /home/runner/output/diagnostic.txt << EOF
+          Build step result: ${{ steps.build.outcome }}
+          EOF
+          echo "COLLECT_DONE"
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ijk-so
+          path: /home/runner/output/
+          if-no-files-found: warn
