@@ -1,10 +1,19 @@
 name: Build ijk MP2
 
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      ANDROID_NDK: /home/runner/android-ndk-r14b
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -13,13 +22,14 @@ jobs:
         run: |
           set -e
           sudo apt update
-          sudo apt install -y git wget unzip yasm nasm make pkg-config autoconf libtool python3
-          export ANDROID_NDK=$HOME/android-ndk-r14b
-          export PATH=$PATH:$ANDROID_NDK
-          cd $HOME
-          wget -v https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip
-          ls -l android-ndk-r14b-linux-x86_64.zip
-          unzip -q android-ndk-r14b-linux-x86_64.zip
+          sudo apt install -y git wget curl unzip yasm nasm make pkg-config autoconf libtool python3
+          export PATH="$PATH:$ANDROID_NDK"
+          cd "$HOME"
+          if [ ! -d "$ANDROID_NDK" ]; then
+            curl -L --retry 5 -o android-ndk-r14b-linux-x86_64.zip https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip
+            unzip -q android-ndk-r14b-linux-x86_64.zip
+          fi
+          rm -rf ijkplayer-android
           git clone https://github.com/bilibili/ijkplayer ijkplayer-android
           cd ijkplayer-android
           git checkout -B latest k0.8.8
@@ -36,15 +46,14 @@ jobs:
           export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-demuxer=mpegts"
           export COMMON_FF_CFG_FLAGS="$COMMON_FF_CFG_FLAGS --enable-protocol=http,tcp,udp,rtp,hls"
           EOF
-          sed -i 's/--enable-small//g' config/module-lite.sh
-          cd ..
-          cd android/contrib
+          sed -i 's/--enable-small//g' module-lite.sh
+          cd ../android/contrib
           ./compile-ffmpeg.sh clean
           ./compile-ffmpeg.sh arm64
-          cd ../..
+          cd ../../android
           ./compile-ijk.sh arm64
-          mkdir -p $HOME/output/arm64-v8a
-          cp android/ijkplayer/ijkplayer-arm64/src/main/libs/arm64-v8a/*.so $HOME/output/arm64-v8a/
+          mkdir -p "$HOME/output/arm64-v8a"
+          cp ijkplayer/ijkplayer-arm64/src/main/libs/arm64-v8a/*.so "$HOME/output/arm64-v8a/"
           echo "BUILD_DONE"
 
       - name: Upload artifact
